@@ -1,14 +1,12 @@
 # Convolutional Seq2Seq
 
-This is a tensorflow implementation of the [convolutional seq2seq model](https://arxiv.org/abs/1705.03122) released by Facebook. This model is orignially written via Torch/Lua in [Fairseq](https://github.com/facebookresearch/fairseq). Considering Lua is not that popular as python in the industry and research community, I re-implemente this model with Tensorflow/Python after carefully reading the paper details and Torch/Lua codebase.     
-
-This implementation is based on the framework of [Google seq2seq project](https://github.com/google/seq2seq), which has a detailed [documentation](https://google.github.io/seq2seq/) on how to use this framework. In this conv seq2seq project, I implement the conv encoder, conv decoder, and attention mechanism, as well as other modules needed by the conv seq2seq model, which is not available in the original seq2seq project. 
+fixed some error for python 3 and tensorflow 1.3, codes from https://github.com/tobyyouup/conv_seq2seq, more details can refer to https://github.com/tobyyouup/conv_seq2seq
 
 
 ## Requirement
 
-- Python 2.7.0+
-- [Tensorflow](https://github.com/tensorflow/tensorflow) 1.0+ (this version is strictly required)
+- Python 3.6.1
+- [Tensorflow](https://github.com/tensorflow/tensorflow) 1.3.0 
 - and their dependencies
 
 Please follow [seq2seq project](https://google.github.io/seq2seq/) on how to install the Convolutional Sequence to Sequence Learning project. 
@@ -115,9 +113,6 @@ python -m bin.infer \
 ```
 
 
-For more detailed instructions, please refer to [seq2seq project](https://google.github.io/seq2seq/).
 
-
-Issues and contributions are warmly welcome.  
 
 
