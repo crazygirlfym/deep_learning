@@ -3,7 +3,7 @@
 from __future__ import print_function
 import tensorflow as tf
 import numpy as np
-from random import random
+import random
 from utils import *
 class SimpleModel(object):
 
@@ -53,6 +53,7 @@ class SimpleModel(object):
         """Sample one element from a distribution assumed to be an array of normalized
         probabilities.
         """
+
         r = random.uniform(0, 1)
         s = 0
         for i in range(len(distribution)):
@@ -67,48 +68,51 @@ class SimpleModel(object):
         return b / np.sum(b, 1)[:, None]
 
     def run(self):
-        train_data = list()
-        for _ in range(self.data_generator._num_unrollings + 1):
-            train_data.append(tf.placeholder(tf.float32, shape=[self.batch_size, self.vocabulary_size]))
-        train_inputs = train_data[:self.data_generator._num_unrollings]
-        train_labels = train_data[1:]
 
-        outputs = list()
-        output = self.saved_output
-        state = self.saved_state
-        for i in train_inputs:
-            output, state = self.lstm_cell(i, output, state)
-            outputs.append(output)
+        ## 需要保证是同一个图
+        with self.graph.as_default():
+            train_data = list()
+            for _ in range(self.data_generator._num_unrollings + 1):
+                train_data.append(tf.placeholder(tf.float32, shape=[self.batch_size, self.vocabulary_size]))
+            train_inputs = train_data[:self.data_generator._num_unrollings]
+            train_labels = train_data[1:]
+            print(train_data)
+            outputs = list()
+            output = self.saved_output
+            state = self.saved_state
+            for i in train_inputs:
+                output, state = self.lstm_cell(i, output, state)
+                outputs.append(output)
 
-        with tf.control_dependencies([self.saved_output.assign(output),
-                                      self.saved_state.assign(state)]):
-            logits = tf.nn.xw_plus_b(tf.concat(0, outputs), self.w, self.b)
-            loss = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(
-                    logits, tf.concat(0, train_labels)))
-        global_step = tf.Variable(0)
-        learning_rate = tf.train.exponential_decay(
-            10.0, global_step, 5000, 0.1, staircase=True)
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+            with tf.control_dependencies([self.saved_output.assign(output),
+                                          self.saved_state.assign(state)]):
+                logits = tf.nn.xw_plus_b(tf.concat(outputs, 0), self.w, self.b)
+                loss = tf.reduce_mean(
+                    tf.nn.softmax_cross_entropy_with_logits(
+                        logits=logits, labels=tf.concat( train_labels, 0)))
+            global_step = tf.Variable(0)
+            learning_rate = tf.train.exponential_decay(
+                10.0, global_step, 5000, 0.1, staircase=True)
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate)
 
-        gradients, v = zip(*optimizer.compute_gradients(loss))
-        gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
-        optimizer = optimizer.apply_gradients(
-            zip(gradients, v), global_step=global_step)
+            gradients, v = zip(*optimizer.compute_gradients(loss))
+            gradients, _ = tf.clip_by_global_norm(gradients, 1.25)
+            optimizer = optimizer.apply_gradients(
+                zip(gradients, v), global_step=global_step)
 
-        train_prediction = tf.nn.softmax(logits)
-        sample_input = tf.placeholder(tf.float32, shape=[1, self.vocabulary_size])
-        saved_sample_output = tf.Variable(tf.zeros([1, self.num_nodes]))
-        saved_sample_state = tf.Variable(tf.zeros([1, self.num_nodes]))
-        reset_sample_state = tf.group(
-            saved_sample_output.assign(tf.zeros([1, self.num_nodes])),
-            saved_sample_state.assign(tf.zeros([1, self.num_nodes])))
-        sample_output, sample_state = self.lstm_cell(
-            sample_input, saved_sample_output, saved_sample_state)
+            train_prediction = tf.nn.softmax(logits)
+            sample_input = tf.placeholder(tf.float32, shape=[1, self.vocabulary_size])
+            saved_sample_output = tf.Variable(tf.zeros([1, self.num_nodes]))
+            saved_sample_state = tf.Variable(tf.zeros([1, self.num_nodes]))
+            reset_sample_state = tf.group(
+                saved_sample_output.assign(tf.zeros([1, self.num_nodes])),
+                saved_sample_state.assign(tf.zeros([1, self.num_nodes])))
+            sample_output, sample_state = self.lstm_cell(
+                sample_input, saved_sample_output, saved_sample_state)
 
-        with tf.control_dependencies([saved_sample_output.assign(sample_output),
-                                      saved_sample_state.assign(sample_state)]):
-            sample_prediction = tf.nn.softmax(tf.nn.xw_plus_b(sample_output, self.w, self.b))
+            with tf.control_dependencies([saved_sample_output.assign(sample_output),
+                                          saved_sample_state.assign(sample_state)]):
+                sample_prediction = tf.nn.softmax(tf.nn.xw_plus_b(sample_output, self.w, self.b))
 
         with tf.Session(graph=self.graph) as session:
             tf.initialize_all_variables().run()
@@ -138,12 +142,12 @@ class SimpleModel(object):
                         print('=' * 80)
                         for _ in range(5):
                             feed = self.sample(self.random_distribution())
-                            sentence = characters(feed)[0]
+                            sentence = characters(feed, self.data_generator._id2char)[0]
                             reset_sample_state.run()
                             for _ in range(79):
                                 prediction = sample_prediction.eval({sample_input: feed})
                                 feed = self.sample(prediction)
-                                sentence += characters(feed)[0]
+                                sentence += characters(feed, self.data_generator._id2char)[0]
                             print(sentence)
                         print('=' * 80)
 

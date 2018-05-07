@@ -2,7 +2,7 @@
 import numpy as np
 
 class BatchGenerator(object):
-    def __init__(self, text, batch_size, num_unrollings, vocabulary_size, char2id):
+    def __init__(self, text, batch_size, num_unrollings, vocabulary_size, char2id, id2char):
         self._text = text
         self._text_size = len(text)
         self._batch_size = batch_size
@@ -10,6 +10,7 @@ class BatchGenerator(object):
         self._vocabulary_size = vocabulary_size
         self._num_unrollings = num_unrollings
         self._char2id = char2id
+        self._id2char = id2char
         self._cursor = [offset * segment for offset in range(batch_size)]
         self._last_batch = self._next_batch()
 
