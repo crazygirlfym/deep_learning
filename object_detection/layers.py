@@ -234,6 +234,15 @@ def flatten(x):
     o = tf.reshape(x, [-1, all_dims_exc_first])
     return o
 
+def scala_transfer(x, r):
+    bsize, a, b, c = x.get_shape().as_list()
+    X = tf.reshape(x, (bsize, a, b, c//(r*r), r, r))
+    X = tf.transpose(X, (0, 1, 2, 5, 4, 3))
+    X = [X[:, i, :, :, :, :] for i in range(a)] # a, [bsize, b, r, r, c/(r*r)
+    X = tf.concat(X, 2)  # bsize, b, a*r, r, c/(r*r)
+    X = [X[:, i, :, :, :] for i in range(b)]  # b, [bsize, r, r, c/(r*r)
+    X = tf.concat(X, 2) # bsize, a*r, b*r, c/(r*r)
+    return X
 
 def __depthwise_conv2d_p(name, x, w=None, kernel_size=(3, 3), padding='SAME', stride=(1, 1),
                          initializer=tf.contrib.layers.xavier_initializer(), l2_strength=0.0, bias=0.0):
