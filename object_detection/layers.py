@@ -259,7 +259,7 @@ def __depthwise_conv2d_p(name, x, w=None, kernel_size=(3, 3), padding='SAME', st
 def depthwise_conv2d(name, x, w=None, kernel_size=(3, 3), padding='SAME', stride=(1, 1),
                      initializer=tf.contrib.layers.xavier_initializer(), l2_strength=0.0, bias=0.0, activation=None,
                      batchnorm_enabled=False, is_training=True):
-    
+
     with tf.variable_scope(name) as scope:
         conv_o_b = __depthwise_conv2d_p(name='conv', x=x, w=w, kernel_size=kernel_size, padding=padding,
                                         stride=stride, initializer=initializer, l2_strength=l2_strength, bias=bias)
@@ -292,9 +292,36 @@ def channel_shuffle(name, x, num_groups):
         return output
 
 
+def grouped_conv2d(name, x, w=None, num_filters=16, kernel_size=(3, 3), padding='SAME', stride=(1, 1),
+                   initializer=tf.contrib.layers.xavier_initializer(), num_groups=1, l2_strength=0.0, bias=0.0,
+                   activation=None, batchnorm_enabled=False, dropout_keep_prob=-1,
+                   is_training=True):
+    with tf.variable_scope(name) as scope:
+        sz = x.get_shape()[3].value // num_groups
+        conv_side_layers = [
+            conv2d(name + "_" + str(i), x[:, :, :, i * sz:i * sz + sz], w, num_filters // num_groups, kernel_size,
+                   padding,
+                   stride,
+                   initializer,
+                   l2_strength, bias, activation=None,
+                   batchnorm_enabled=False, max_pool_enabled=False, dropout_keep_prob=dropout_keep_prob,
+                   is_training=is_training) for i in
+            range(num_groups)]
+        conv_g = tf.concat(conv_side_layers, axis=-1)
 
+        if batchnorm_enabled:
+            conv_o_bn = tf.layers.batch_normalization(conv_g, training=is_training, epsilon=1e-5)
+            if not activation:
+                conv_a = conv_o_bn
+            else:
+                conv_a = activation(conv_o_bn)
+        else:
+            if not activation:
+                conv_a = conv_g
+            else:
+                conv_a = activation(conv_g)
 
-
+        return conv_a
 
 
 
