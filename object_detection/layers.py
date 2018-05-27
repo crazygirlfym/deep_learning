@@ -235,4 +235,46 @@ def flatten(x):
     return o
 
 
+def __depthwise_conv2d_p(name, x, w=None, kernel_size=(3, 3), padding='SAME', stride=(1, 1),
+                         initializer=tf.contrib.layers.xavier_initializer(), l2_strength=0.0, bias=0.0):
+    with tf.variable_scope(name):
+        stride = [1, stride[0], stride[1], 1]
+        kernel_shape = [kernel_size[0], kernel_size[1], x.shape[-1], 1]
+
+        with tf.name_scope('layer_weights'):
+            if w is None:
+                w = __variable_with_weight_decay(kernel_shape, initializer, l2_strength)
+            __variable_summaries(w)
+        with tf.name_scope('layer_biases'):
+            if isinstance(bias, float):
+                bias = tf.get_variable('biases', [x.shape[-1]], initializer=tf.constant_initializer(bias))
+            __variable_summaries(bias)
+        with tf.name_scope('layer_conv2d'):
+            conv = tf.nn.depthwise_conv2d(x, w, stride, padding)
+            out = tf.nn.bias_add(conv, bias)
+
+    return out
+
+
+def depthwise_conv2d(name, x, w=None, kernel_size=(3, 3), padding='SAME', stride=(1, 1),
+                     initializer=tf.contrib.layers.xavier_initializer(), l2_strength=0.0, bias=0.0, activation=None,
+                     batchnorm_enabled=False, is_training=True):
+    with tf.variable_scope(name) as scope:
+        conv_o_b = __depthwise_conv2d_p(name='conv', x=x, w=w, kernel_size=kernel_size, padding=padding,
+                                        stride=stride, initializer=initializer, l2_strength=l2_strength, bias=bias)
+
+        if batchnorm_enabled:
+            conv_o_bn = tf.layers.batch_normalization(conv_o_b, training=is_training, epsilon=1e-5)
+            if not activation:
+                conv_a = conv_o_bn
+            else:
+                conv_a = activation(conv_o_bn)
+        else:
+            if not activation:
+                conv_a = conv_o_b
+            else:
+                conv_a = activation(conv_o_b)
+    return conv_a
+
+
 
