@@ -259,6 +259,7 @@ def __depthwise_conv2d_p(name, x, w=None, kernel_size=(3, 3), padding='SAME', st
 def depthwise_conv2d(name, x, w=None, kernel_size=(3, 3), padding='SAME', stride=(1, 1),
                      initializer=tf.contrib.layers.xavier_initializer(), l2_strength=0.0, bias=0.0, activation=None,
                      batchnorm_enabled=False, is_training=True):
+    
     with tf.variable_scope(name) as scope:
         conv_o_b = __depthwise_conv2d_p(name='conv', x=x, w=w, kernel_size=kernel_size, padding=padding,
                                         stride=stride, initializer=initializer, l2_strength=l2_strength, bias=bias)
@@ -275,6 +276,26 @@ def depthwise_conv2d(name, x, w=None, kernel_size=(3, 3), padding='SAME', stride
             else:
                 conv_a = activation(conv_o_b)
     return conv_a
+
+
+def channel_shuffle(name, x, num_groups):
+
+    ## implemention of "ShuffleNet: An Extremely Efficient Convolutional Neural Network for Mobile Devices"
+    ## 解释下： 分组做卷积操作，假设有M个filter 和N 个feature map 做卷积，然后相加作为一个卷积的结果， 当引入group操作的时候
+    ## 将M 个filter 和N个feature map分成g个group， 做卷积的时候， 第一个group 和M/g 个filter 的每一个都和第一个group的N/g个输入做卷积
+    ## 在这种操作下， 某个输出的channel仅仅来自于输入channel的一小部分，会有边界效应, 因此引入了不同组之间进行channel shuffle
+    with tf.variable_scope(name) as scope:
+        n, h, w, c = x.shape.as_list()
+        x_reshaped = tf.reshape(x, [-1, h, w, num_groups, c // num_groups])
+        x_transposed = tf.transpose(x_reshaped, [0, 1, 2, 4, 3])
+        output = tf.reshape(x_transposed, [-1, h, w, c])
+        return output
+
+
+
+
+
+
 
 
 
