@@ -49,6 +49,25 @@ def __conv2d_p(name, x, w=None, num_filters=16, kernel_size=(3, 3), padding='SAM
     return out
 
 
+def atrous_conv2d(name, x, filters, rate, padding='VALID'):
+
+    """
+    Atrous Convolution 2D Wrapper
+    :param name: (string) The name scope provided by the upper tf.name_scope('name') as scope.
+    :param x: (tf.tensor) The input to the layer (N, H, W, C).
+    :param filters:  A 4-D Tensor with the same type as x and shape [filter_height, filter_width, in_channels, out_channels]. filters' in_channels dimension must match that of x.
+    :param rate: positive int32. The stride with which we sample input values across the height and width dimensions. Equivalently, the rate by which we upsample the filter values by inserting zeros across the height and width dimensions. In the literature, the same parameter is sometimes called input stride or dilation
+    :param padding: A string, either 'VALID' or 'SAME'. The padding algorithm.
+    :return:
+    """
+
+    with tf.variable_scope(name) as scope:
+        n, h, w, c = x.shape.as_list()
+        nn, hh, ww, cc = filters.shape.as_list()
+        assert w == ww
+        return tf.nn.atrous_conv2d(x, filters, rate, padding);
+
+
 def conv2d(name, x, w=None, num_filters=16, kernel_size=(3, 3), padding='SAME', stride=(1, 1),
            initializer=tf.contrib.layers.xavier_initializer(), l2_strength=0.0, bias=0.0,
            activation=None, batchnorm_enabled=False, max_pool_enabled=False, dropout_keep_prob=-1,
