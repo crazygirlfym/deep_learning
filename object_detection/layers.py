@@ -359,7 +359,7 @@ def mlpconv(name, x, num_filters, is_training, kernel_size= (1,1)):
         refer to Network in Network
     :param name:
     :param x: (N,H,W,C)
-    :param num_filters:  output_channle list  
+    :param num_filters:  output_channle list
     :param is_training:
     :param kernel_size: (1,1) 1 * 1
     :return:
@@ -370,5 +370,8 @@ def mlpconv(name, x, num_filters, is_training, kernel_size= (1,1)):
         conv_2 = conv2d(name + '_layers2', conv_1,  kernel_size=(1, 1), num_filters=num_filters[1], batchnorm_enabled=True, activation=tf.nn.relu, is_training=is_training)
         conv_3 = conv2d(name + '_layers3', conv_2,  kernel_size=(1, 1), num_filters=num_filters[2], batchnorm_enabled=True, activation=tf.nn.relu, is_training=is_training)
         return conv_3
+
+
+
 
 
