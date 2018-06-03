@@ -353,4 +353,22 @@ def grouped_conv2d(name, x, w=None, num_filters=16, kernel_size=(3, 3), padding=
 
 
 
+def mlpconv(name, x, num_filters, is_training, kernel_size= (1,1)):
+
+    """
+        refer to Network in Network
+    :param name:
+    :param x: (N,H,W,C)
+    :param num_filters:  output_channle
+    :param is_training:
+    :param kernel_size: (1,1) 1 * 1
+    :return:
+    """
+
+    with tf.variable_scope(name) as scope:
+        conv_1 = conv2d(name + '_layers1', x,  kernel_size=kernel_size, num_filters=num_filters, batchnorm_enabled=True, activation=tf.nn.relu, is_training=is_training)
+        conv_2 = conv2d(name + '_layers2', conv_1,  kernel_size=kernel_size, num_filters=num_filters, batchnorm_enabled=True, activation=tf.nn.relu, is_training=is_training)
+        conv_3 = conv2d(name + '_layers3', conv_2,  kernel_size=kernel_size, num_filters=num_filters, batchnorm_enabled=True, activation=tf.nn.relu, is_training=is_training)
+        return conv_3
+
 
