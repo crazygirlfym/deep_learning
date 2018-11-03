@@ -408,6 +408,20 @@ def train(args):
     print ("Best Iter(validation)=%d\t train = %.4f, valid = %.4f [%.1f s]"
            %(best_epoch+1, model.train_rmse[best_epoch], model.valid_rmse[best_epoch], time()-t1))
 
+def get_ordered_block_from_data(data, batch_size, index):  # generate a ordered block of data
+    start_index = index*batch_size
+    X , Y = [], []
+    # get sample
+    i = start_index
+    while len(X) < batch_size and i < len(data['X']):
+        if len(data['X'][i]) == len(data['X'][start_index]):
+            Y.append(data['Y'][i])
+            X.append(data['X'][i])
+            i = i + 1
+        else:
+            break
+    return {'X': X, 'Y': Y}
+
 
 def evaluate(args):
     data = Data.LoadData(args.path, args.dataset).Test_data
@@ -437,13 +451,13 @@ def evaluate(args):
 
     # fetch the first batch
     batch_index = 0
-    batch_xs = self.get_ordered_block_from_data(data, self.batch_size, batch_index)
+    batch_xs = get_ordered_block_from_data(data, args.batch_size, batch_index)
     y_pred = None
 
     while len(batch_xs['X']) > 0:
         num_batch = len(batch_xs['Y'])
-        feed_dict = {self.train_features: batch_xs['X'], self.train_labels: [[y] for y in batch_xs['Y']], self.dropout_keep: list(1.0 for i in range(len(self.keep))), self.train_phase: False}
-        batch_out = self.sess.run(self.out, feed_dict=feed_dict)
+        feed_dict = {train_features: batch_xs['X'], train_labels: [[y] for y in batch_xs['Y']], dropout_keep: list(1.0 for i in range(len(self.keep))), train_phase: False}
+        batch_out = sess.run(out, feed_dict=feed_dict)
         if batch_index == 0:
             y_pred = np.reshape(batch_out, (num_batch, ))
         else:
@@ -451,7 +465,7 @@ def evaluate(args):
 
         ## fetch the next batch
         batch_index += 1
-        batch_xs = self.get_ordered_block_from_data(data, self.batch_size, batch_index)
+        batch_xs = get_ordered_block_from_data(data, args.batch_size, batch_index)
     y_true = np.reshape(data['Y'], (num_example, ))
 
 
