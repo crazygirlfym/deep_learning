@@ -15,7 +15,8 @@ import tensorflow as tf
 from sklearn.base import BaseEstimator, TransformerMixin
 from time import time
 from tensorflow.contrib.layers.python.layers import batch_norm as batch_norm
-
+import math
+from sklearn.metrics import mean_squared_error
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run DeepFM.")
@@ -345,5 +346,128 @@ class DeepFm(BaseEstimator, TransformerMixin):
 
         while len(batch_xs['X']) > 0:
             num_batch = len(batch_xs['Y'])
-            feed_dict = {self.train_features: batch_xs['X'], self.train}
+            feed_dict = {self.train_features: batch_xs['X'], self.train_labels: [[y] for y in batch_xs['Y']], self.dropout_keep: list(1.0 for i in range(len(self.keep))), self.train_phase: False}
+            batch_out = self.sess.run(self.out, feed_dict=feed_dict)
+            if batch_index == 0:
+                y_pred = np.reshape(batch_out, (num_batch, ))
+            else:
+                y_pred = np.concatenate((y_pred, np.reshape(batch_out, (num_batch, ))))
 
+            ## fetch the next batch
+            batch_index += 1
+            batch_xs = self.get_ordered_block_from_data(data, self.batch_size, batch_index)
+        y_true = np.reshape(data['Y'], (num_example, ))
+
+
+        predictions_bounded = np.maximum(y_pred, np.ones(num_example) * min(y_true))  # bound the lower values
+        predictions_bounded = np.minimum(predictions_bounded, np.ones(num_example) * max(y_true))  # bound the higher values
+        RMSE = math.sqrt(mean_squared_error(y_true, predictions_bounded))
+        return RMSE
+
+
+def make_save_file(args):
+    pretrain_path = '../pretrain/%s_%d' %(args.dataset, eval(args.hidden_factor)[1])
+    if not os.path.exists(pretrain_path):
+        os.makedirs(pretrain_path)
+    save_file = pretrain_path+'/%s_%d' %(args.dataset, eval(args.hidden_factor)[1])
+    return save_file
+
+def train(args):
+    data = DATA.LoadData(args.path, args.dataset)
+    if args.verbose > 0:
+        print("DeepFm: dataset=%s, factors=%s, epoch=%d, batch_size=%d, lr=%.4f, keep=%s,
+          optimizer=%s, batch_norm=%s, decay=%f, activation=%s" %(args.dataset, args.hidden_factor
+          args.epoch, args.batch_size, args.lr, args.keep, args.optimizer, args.batch_norm, args.decay,
+          args.activation))
+
+    if args.activation == 'sigmoid':
+        activation_function = tf.sigmoid
+    elif args.activation == 'tanh':
+        activation_function = tf.tanh
+    elif args.activation == 'identity':
+        activation_function = tf.identity
+
+    save_file = make_save_file(args)
+
+    ## training
+    t1 = time()
+    model = DeepFm(data.features_M, args.embedding_size, args.pretrain_flag, save_file,
+                   activation_function, args.epoch, args.batch_size, args.learning_rate, args.optimizer_type,
+                   args.batch_norm, args.batch_norm_decay, args.keep)
+    model.train(data.Train_data, data.Validation_data, data.Test_data)
+
+    ## find the best validation result across iterations
+
+    best_valid_score = 0
+    if model.greater_is_better:
+        best_valid_score = max(model.valid_rmse)
+    else:
+        best_valid_score = min(model.valid_rmse)
+
+    best_epoch = model.valid_rmse.index(best_valid_score)
+    print ("Best Iter(validation)=%d\t train = %.4f, valid = %.4f [%.1f s]"
+           %(best_epoch+1, model.train_rmse[best_epoch], model.valid_rmse[best_epoch], time()-t1))
+
+
+def evaluate(args):
+    data = Data.LoadData(args.path, args.dataset).Test_data
+    save_file = make_save_file(args)
+
+
+    ## load the graph
+    weight_saver = tf.train.import_meta_graph(save_file + '.meta')
+    pretrain_graph = tf.get_default_graph()
+
+    train_features = pretrain_graph.get_tensor_by_name('train_feature:0')
+    train_labels = pretrain_graph.get_tensor_by_name('train_labels:0')
+    dropout_keep = pretrain_graph.get_tensor_by_name('dropout_keep:0')
+    train_phase = pretrain_graph.get_tensor_by_name('train_phase:0')
+    out = pretrain_graph.get_tensor_by_name("out:0")
+
+    ## restore session
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+    weight_saver.restore(sess, save_file)
+
+
+    # start evaluation
+
+    num_example = len(data['Y'])
+
+    # fetch the first batch
+    batch_index = 0
+    batch_xs = self.get_ordered_block_from_data(data, self.batch_size, batch_index)
+    y_pred = None
+
+    while len(batch_xs['X']) > 0:
+        num_batch = len(batch_xs['Y'])
+        feed_dict = {self.train_features: batch_xs['X'], self.train_labels: [[y] for y in batch_xs['Y']], self.dropout_keep: list(1.0 for i in range(len(self.keep))), self.train_phase: False}
+        batch_out = self.sess.run(self.out, feed_dict=feed_dict)
+        if batch_index == 0:
+            y_pred = np.reshape(batch_out, (num_batch, ))
+        else:
+            y_pred = np.concatenate((y_pred, np.reshape(batch_out, (num_batch, ))))
+
+        ## fetch the next batch
+        batch_index += 1
+        batch_xs = self.get_ordered_block_from_data(data, self.batch_size, batch_index)
+    y_true = np.reshape(data['Y'], (num_example, ))
+
+
+    predictions_bounded = np.maximum(y_pred, np.ones(num_example) * min(y_true))  # bound the lower values
+    predictions_bounded = np.minimum(predictions_bounded, np.ones(num_example) * max(y_true))  # bound the higher values
+    RMSE = math.sqrt(mean_squared_error(y_true, predictions_bounded))
+    print("Test RMSE: %.4f"%(RMSE))
+
+
+def main():
+    args = parse_args()
+    if args.process == 'train':
+        train(args)
+    elif args.process == 'evaluate':
+        evaluate(args)
+
+
+if __name__ == "__main__":
+    main()
