@@ -23,7 +23,8 @@ class LoadData(object):
         self.trainfile = self.path + dataset +".train.libfm"
         self.testfile = self.path + dataset + ".test.libfm"
         self.validationfile = self.path + dataset + ".validation.libfm"
-        self.features_M = self.map_features( )
+        self.features_M = self.map_features()
+        self.field = self.get_field()
         self.Train_data, self.Validation_data, self.Test_data = self.construct_data( loss_type )
 
     def map_features(self): # map the feature entries in all files, kept in self.features dictionary
@@ -33,6 +34,14 @@ class LoadData(object):
         self.read_features(self.validationfile)
         # print("features_M:", len(self.features))
         return  len(self.features)
+
+    def get_field(self):
+        f = open(self.trainfile)
+        for line in f:
+            line = line.strip().split(" ")
+            return len(line) -1
+
+
 
     def read_features(self, file): # read a feature file
         f = open( file )
