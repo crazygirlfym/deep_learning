@@ -11,12 +11,18 @@
 Tensorflow implementation of DeepFM
 
 '''
+import sys, os
 import tensorflow as tf
 from sklearn.base import BaseEstimator, TransformerMixin
 from time import time
 from tensorflow.contrib.layers.python.layers import batch_norm as batch_norm
 import math
 from sklearn.metrics import mean_squared_error
+import argparse
+import LoadData as DATA
+import numpy as np
+from tensorflow.contrib.layers.python import layers
+### -------------------Arguments ------------------------ ####
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run DeepFM.")
@@ -32,8 +38,11 @@ def parse_args():
                         help='flag or pretrain. 1:initialize from pretrain;0:randomly initialize')
     parser.add_argument('--batch_size', type=int, default=4096,
                         help='Batch size.')
-    parser.add_argument('--hidden_factor', nargs='?', default='[16,16]',
-                        help='Number of hidden factors.')
+    #parser.add_argument('--hidden_factor', nargs='?', default='[16,16]',
+    #                    help='Number of hidden factors.')
+
+    parser.add_argument('--hidden_factor', type=int,  default=100,
+                        help='Number of embedding_size')
     parser.add_argument('--lr', type=float, default=0.1,
                         help='Learning rate.')
     parser.add_argument('--optimizer', nargs='?', default='AdamOptimizer',
@@ -46,37 +55,47 @@ def parse_args():
                         help='Decay value for batch norm.')
 
     parser.add_argument('--keep', nargs='?', default='[1.0,0.5]',
+                        help='dropout ratio list')
+
+    parser.add_argument('--activation', nargs='?', default='relu',
+                    help='Which activation function to use for deep layers: relu, sigmoid, tanh, identity')
+    return parser.parse_args()
+
+
 class DeepFm(BaseEstimator, TransformerMixin):
-    def __init__(self, feature_size, embedding_size, pretrain_flag, save_file,
+    def __init__(self, feature_size, field_size, embedding_size, pretrain_flag, save_file,
                  deep_layer_activation, epoch, batch_size, learning_rate, optimizer_type, batch_norm,
-                 batch_norm_decay, keep, loss_type="mse", deep_layers=[32, 32], use_fm=True, use_deep=True, verbose=False, random_seed=2018,
+                 batch_norm_decay, keep, loss_type="mse", deep_layers=[32, 32], use_fm=True, use_deep=True, verbose=True, random_seed=2018,
                  greater_is_better=True):
 
 
         assert (use_fm or use_deep)
 
         self.feature_size = feature_size
+        self.field_size = field_size
         self.embedding_size=embedding_size
         self.pretrain_flag = pretrain_flag
         self.save_file = save_file
         self.use_fm = use_fm
         self.use_deep= use_deep
         self.epoch = epoch
-        self.learning_rate = lr
+        self.learning_rate = learning_rate
         self.optimizer_type=optimizer_type
         self.batch_norm=batch_norm
-        self.decay = decay
+        self.decay = batch_norm_decay
         self.greater_is_better = greater_is_better
         self.verbose=verbose
         self.random_seed = random_seed
-        self.deep_layer = deep_layer
+        self.deep_layers = deep_layers
+        self.deep_layer_activation = deep_layer_activation
         self.loss_type = loss_type
         self.keep = keep
+        self.batch_size = batch_size
         self.train_rmse, self.valid_rmse, self.test_tmse=[], [], []
 
         ## init all variables in tensorflow graph
 
-        def._init_graph()
+        self._init_graph()
 
 
     def _init_graph(self):
@@ -93,7 +112,7 @@ class DeepFm(BaseEstimator, TransformerMixin):
 
             ## Input data
             self.train_features = tf.placeholder(tf.int32, shape=[None, None], name='train_feature')
-            self.train_labels = tf.placeholdr(tf.floa32, shape=[None, 1], name='train_labels')
+            self.train_labels = tf.placeholder(tf.float32, shape=[None, 1], name='train_labels')
             self.dropout_keep = tf.placeholder(tf.float32, shape=[None], name='dropout_keep')
             self.train_phase = tf.placeholder(tf.bool, name='train_phase')
 
@@ -102,10 +121,10 @@ class DeepFm(BaseEstimator, TransformerMixin):
 
             # Model
             ## ----- embeddding features -----
-            self.embeddings = tf.nn.embedding_lookup(self.weights['feature_embeddings'], self.train_features) #None * F * K
+            self.embeddings = tf.nn.embedding_lookup(self.weights['feature_embeddings'], self.train_features) #None * F' * K
 
             ## ----- first order term ----
-            self.y_first_order = tf.nn.embedding_lookup(self.weights['feature_bias', self.train_features])  # None * F * 1
+            self.y_first_order = tf.nn.embedding_lookup(self.weights['feature_bias'], self.train_features)  # None * F' * 1
             self.y_first_order = tf.reduce_sum(self.y_first_order, 1) ## None * 1
 
             ## ----- second order term ---
@@ -121,12 +140,11 @@ class DeepFm(BaseEstimator, TransformerMixin):
             self.y_second_order = 0.5 * tf.subtract(self.summed_features_emb_square, self.squared_features_emb_sum)  ## None * K
 
             # ----- deep component ----
-
-            self.y_deep = tf.reshape(self.embeddings, shape=[-1, self.feature_size * self.embedding_size])  ## None * (F * K)
+            self.y_deep = tf.reshape(self.embeddings, shape=[-1, self.field_size * self.embedding_size])  ## None * (F * K)
             self.y_deep = tf.nn.dropout(self.y_deep, self.dropout_keep[0])
 
 
-            for i in range(0, len(self.deep_layer)):
+            for i in range(0, len(self.deep_layers)):
                 self.y_deep = tf.add(tf.matmul(self.y_deep, self.weights["layer_%d" %i]), self.weights['bias_%d' %i])  ## None * layer[i]
                 if self.batch_norm:
                     self.batch_norm_layer(self.y_deep, train_phase=self.train_phase, scope_bn="bn_%d" %i)
@@ -146,17 +164,21 @@ class DeepFm(BaseEstimator, TransformerMixin):
 
             ## TODO regulazation
 
-            self.identity_out = tf.identity(concat_input, name='out')
+            self.identity_out = tf.identity(concat_input, name='concat_out')
+            self.linear_out = self._linear(self.identity_out, 1, -1, None)
+
+
 
             ## loss
             if self.loss_type == "logloss":
-                self.out = tf.sigmoid(self.identity_out)
-                self.loss = tf.losses.log_loss(self.train_labels, self.identity_out)
+                self.out = tf.sigmoid(self.linear_out)
+                self.loss = tf.losses.log_loss(self.train_labels, self.out)
             elif self.loss_type == "mse":
-                self.loss = tf.nn.l2_loss(tf.subtract(self.train_labels, self.identity_out))
+                self.out = self.linear_out
+                self.loss = tf.nn.l2_loss(tf.subtract(self.train_labels, self.out))
             else:
                 raise NotImplementedError
-
+            self.out = tf.identity(self.out, name="out")
             # Optimizer.
             if self.optimizer_type == 'AdamOptimizer':
                 self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8).minimize(self.loss)
@@ -213,6 +235,7 @@ class DeepFm(BaseEstimator, TransformerMixin):
             all_weights["bias_%d" % i] = tf.Variable(
                                 np.random.normal(loc=0, scale=glorot, size=(1, self.deep_layers[i])),
                                 dtype=np.float32)  # 1 * layer[i]
+        return all_weights
 
     def batch_norm_layer(self, x, train_phase, scope_bn):
         bn_train = batch_norm(x, decay=self.decay, center=True, scale=True, updates_collections=None,
@@ -230,11 +253,10 @@ class DeepFm(BaseEstimator, TransformerMixin):
 
     def partial_fit(self, data):
         ## fit a batch
-
         feed_dict = {self.train_features: data['X'], self.train_labels: data['Y'],
                      self.dropout_keep: self.keep, self.train_phase: True}
 
-        loss, opt = self.sess.run(self.loss, self.optimizer)
+        loss, opt = self.sess.run((self.loss, self.optimizer), feed_dict=feed_dict)
         return loss
 
     def get_random_block_from_data(self, data, batch_size):  # generate a random block of training data
@@ -280,24 +302,34 @@ class DeepFm(BaseEstimator, TransformerMixin):
         np.random.set_state(rng_state)
         np.random.shuffle(b)
 
+    def _linear(self, input_tensor, output_nums, l2_reg, activation_fn=None):
+        if l2_reg <= 0:
+            return layers.fully_connected(input_tensor, output_nums, activation_fn=activation_fn,
+                        weights_initializer=layers.xavier_initializer(),
+                        biases_initializer=layers.xavier_initializer(),)
+        else:
+            return layers.fully_connected(input_tensor, output_nums, activation_fn=activation_fn,
+                    weights_initializer=layers.xavier_initializer(),
+                    biases_initializer=layers.xavier_initializer(),
+                    weights_regularizer=layers.l2_regularizer(l2_reg), biases_regularizer=layers.l2_regularizer(l2_reg))
 
     def train(self, train_data, valid_data, test_data):
         #TODO check init performance
 
         for epoch in range(self.epoch):
             t1 = time()
-            self.shuffle_in_unison_scary(Train_data['X'], Train_data['Y'])
-            total_batch = int(len(Train_data['Y']) / self.batch_size)
+            self.shuffle_in_unison_scary(train_data['X'], train_data['Y'])
+            total_batch = int(len(train_data['Y']) / self.batch_size)
             for i in range(total_batch):
                 # generate a batch
-                batch_xs = self.get_random_block_from_data(Train_data, self.batch_size)
+                batch_xs = self.get_random_block_from_data(train_data, self.batch_size)
                 # Fit training
                 self.partial_fit(batch_xs)
             t2 = time()
 
             # evaluate training and validation datasets
-            train_result = self.evaluate(Train_data)
-            valid_result = self.evaluate(Validation_data)
+            train_result = self.evaluate(train_data)
+            valid_result = self.evaluate(valid_data)
             self.train_rmse.append(train_result)
             self.valid_rmse.append(valid_result)
             if self.verbose > 0 and epoch%self.verbose == 0:
@@ -366,20 +398,22 @@ class DeepFm(BaseEstimator, TransformerMixin):
 
 
 def make_save_file(args):
-    pretrain_path = '../pretrain/%s_%d' %(args.dataset, eval(args.hidden_factor)[1])
+    pretrain_path = '../pretrain/%s_%d' %(args.dataset, args.hidden_factor)
     if not os.path.exists(pretrain_path):
         os.makedirs(pretrain_path)
-    save_file = pretrain_path+'/%s_%d' %(args.dataset, eval(args.hidden_factor)[1])
+    save_file = pretrain_path+'/%s_%d' %(args.dataset, args.hidden_factor)
     return save_file
 
 def train(args):
     data = DATA.LoadData(args.path, args.dataset)
     if args.verbose > 0:
-        print("DeepFm: dataset=%s, factors=%s, epoch=%d, batch_size=%d, lr=%.4f, keep=%s,
-          optimizer=%s, batch_norm=%s, decay=%f, activation=%s" %(args.dataset, args.hidden_factor
-          args.epoch, args.batch_size, args.lr, args.keep, args.optimizer, args.batch_norm, args.decay,
+        print("DeepFm: dataset=%s, factors=%s, epoch=%d, batch_size=%d, lr=%.4f, keep=%s,\
+          optimizer=%s, batch_norm=%s, decay=%f, activation=%s" %(args.dataset, args.hidden_factor, \
+          args.epoch, args.batch_size, args.lr, eval(args.keep), args.optimizer, args.batch_norm, args.decay, \
           args.activation))
 
+
+    activation_function = tf.nn.relu
     if args.activation == 'sigmoid':
         activation_function = tf.sigmoid
     elif args.activation == 'tanh':
@@ -391,9 +425,9 @@ def train(args):
 
     ## training
     t1 = time()
-    model = DeepFm(data.features_M, args.embedding_size, args.pretrain_flag, save_file,
-                   activation_function, args.epoch, args.batch_size, args.learning_rate, args.optimizer_type,
-                   args.batch_norm, args.batch_norm_decay, args.keep)
+    model = DeepFm(data.features_M, data.field, args.hidden_factor, args.pretrain, save_file,
+                   activation_function, args.epoch, args.batch_size, args.lr, args.optimizer,
+                   args.batch_norm, args.decay, eval(args.keep))
     model.train(data.Train_data, data.Validation_data, data.Test_data)
 
     ## find the best validation result across iterations
@@ -458,6 +492,7 @@ def evaluate(args):
         num_batch = len(batch_xs['Y'])
         feed_dict = {train_features: batch_xs['X'], train_labels: [[y] for y in batch_xs['Y']], dropout_keep: list(1.0 for i in range(len(self.keep))), train_phase: False}
         batch_out = sess.run(out, feed_dict=feed_dict)
+
         if batch_index == 0:
             y_pred = np.reshape(batch_out, (num_batch, ))
         else:
