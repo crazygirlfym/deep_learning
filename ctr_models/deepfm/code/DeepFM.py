@@ -56,10 +56,10 @@ def parse_args():
                         help='Whether to perfom batch normalization (0 or 1)')
     parser.add_argument('--decay', type=float, default=0.999,
                         help='Decay value for batch norm.')
-
     parser.add_argument('--keep', nargs='?', default='[1.0,0.5]',
                         help='dropout ratio list')
-
+    parser.add_argument('--l2_reg', type=float, default=0.1,
+                        help ='the ratio for l2 regularization')
     parser.add_argument('--activation', nargs='?', default='relu',
                     help='Which activation function to use for deep layers: relu, sigmoid, tanh, identity')
     return parser.parse_args()
@@ -68,7 +68,7 @@ def parse_args():
 class DeepFm(BaseEstimator, TransformerMixin):
     def __init__(self, feature_size, field_size, embedding_size, pretrain_flag, save_file,
                  deep_layer_activation, epoch, batch_size, learning_rate, optimizer_type, batch_norm,
-                 batch_norm_decay, keep, loss_type="mse", deep_layers=[32, 32], use_fm=True, use_deep=True, verbose=True, random_seed=2018,
+                 batch_norm_decay, keep, l2_reg= 0.0, loss_type="mse", deep_layers=[32, 32], use_fm=True, use_deep=True, verbose=True, random_seed=2018,
                  greater_is_better=False):
 
 
@@ -94,6 +94,7 @@ class DeepFm(BaseEstimator, TransformerMixin):
         self.loss_type = loss_type
         self.keep = keep
         self.batch_size = batch_size
+        self.l2_reg = l2_reg
         self.train_rmse, self.valid_rmse, self.test_tmse=[], [], []
 
         ## init all variables in tensorflow graph
@@ -143,6 +144,7 @@ class DeepFm(BaseEstimator, TransformerMixin):
 
             ## second order
             self.y_second_order = 0.5 * tf.subtract(self.summed_features_emb_square, self.squared_features_emb_sum)  ## None * K
+            self.y_second_order = self._linear(self.y_second_order, 1, self.l2_reg, None)
 
             # ----- deep component ----
             self.y_deep = tf.reshape(self.embeddings, shape=[-1, self.field_size * self.embedding_size])  ## None * (F * K)
@@ -157,7 +159,7 @@ class DeepFm(BaseEstimator, TransformerMixin):
                 self.y_deep = self.deep_layer_activation(self.y_deep)
                 self.y_deep = tf.nn.dropout(self.y_deep, self.dropout_keep[1])
 
-            ## TODO regulazation
+            self.y_deep = self._linear(self.y_deep, 1, self.l2_reg, None)
 
 
             if self.use_fm and self.use_deep:
@@ -170,7 +172,7 @@ class DeepFm(BaseEstimator, TransformerMixin):
             ## TODO regulazation
 
             self.identity_out = tf.identity(concat_input, name='concat_out')
-            self.linear_out = self._linear(self.identity_out, 1, -1, None)
+            self.linear_out = self._linear(self.identity_out, 1, self.l2_reg, None)
 
 
 
