@@ -9,6 +9,9 @@
 
 '''
 Tensorflow implementation of DeepFM
+Reference:
+    DeepFM: A Factorization-Machine based Neural Network for CTR Prediction,
+    Huifeng Guo, Ruiming Tang, Yunming Yey, Zhenguo Li, Xiuqiang He.
 
 '''
 import sys, os
@@ -66,7 +69,7 @@ class DeepFm(BaseEstimator, TransformerMixin):
     def __init__(self, feature_size, field_size, embedding_size, pretrain_flag, save_file,
                  deep_layer_activation, epoch, batch_size, learning_rate, optimizer_type, batch_norm,
                  batch_norm_decay, keep, loss_type="mse", deep_layers=[32, 32], use_fm=True, use_deep=True, verbose=True, random_seed=2018,
-                 greater_is_better=True):
+                 greater_is_better=False):
 
 
         assert (use_fm or use_deep)
@@ -106,6 +109,8 @@ class DeepFm(BaseEstimator, TransformerMixin):
         self.graph = tf.Graph()
 
         with self.graph.as_default():
+
+            ## TODO: Add summary
 
             ## set graph lebel random seed
             tf.set_random_seed(self.random_seed)
