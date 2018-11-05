@@ -71,7 +71,7 @@ def parse_args():
 class DCN(BaseEstimator, TransformerMixin):
     def __init__(self, feature_size, field_size, embedding_size, pretrain_flag, save_file,
                  deep_layer_activation, epoch, batch_size, learning_rate, optimizer_type, batch_norm,
-                 batch_norm_decay, keep, cross_layers, deep_layers, verbose=True, random_seed = 2018, l2_reg=0.0, loss_type="mse",
+                 batch_norm_decay, keep, cross_layers, deep_layers, verbose=True, random_seed = 2018, l2_reg=0.1, loss_type="mse",
                  greater_is_better=False):
 
 
@@ -225,11 +225,11 @@ class DCN(BaseEstimator, TransformerMixin):
 
         for i in range( num_layers):
             all_weights["crosslayer_%d" % i] = tf.Variable(
-                                tf.random_normal((input_size, 1), mean=0.0, stddev=0.5),
+                                np.random.normal(loc=0, scale=glorot, size=(input_size, 1)),
                                 dtype=tf.float32)
             all_weights["crossbias_%d" % i] = tf.Variable(
-                                tf.random_normal((input_size, 1), mean=0.0, stddev=0.5),
-                                dtype=tf.float32)  # 1 * layer[i]
+                                np.random.normal(loc=0, scale=glorot, size=(input_size, 1)),
+                                dtype=tf.float32)
         self.input_size = input_size
         return all_weights
 
