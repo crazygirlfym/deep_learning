@@ -47,8 +47,8 @@ def parse_args():
                         help='Number of embedding_size')
     parser.add_argument('--lr', type=float, default=0.1,
                         help='Learning rate.')
-    parser.add_argument('--cross_layers', nargs='?', default='[32, 32]',
-                        help='cross layer and nodes')
+    parser.add_argument('--cross_layers', type=int, default=3,
+                        help='the number of cross layer ')
     parser.add_argument('--deep_layers', nargs='?', default='[256, 256]',
                         help='deep layers and nodes')
     parser.add_argument('--optimizer', nargs='?', default='AdamOptimizer',
@@ -121,14 +121,17 @@ class DCN(BaseEstimator, TransformerMixin):
         # Model
 
         ## ------embedding features --------
-        self.embedding = tf.nn.embedding_lookup(self.weights['feature_embeddings'], self.train_features)
+        self.embeddings = tf.nn.embedding_lookup(self.weights['feature_embeddings'], self.train_features)
 
         ## ----- cross layers -------
-        last_layer = self.embedding
-        for i in range(0, len(self.cross_layers)):
-            last_layer = self.cross_op(self.embedding, last_layer,
-                                           self.weights['crosslayer_%d' %i], self.weights['crossbias_%d' %i])
-        self.cross_out = self._linear(last_layer, 1, self.l2_reg, None)
+        x0 = self.embeddings
+        x0 = tf.reshape(x0, (-1, self.input_size,1))
+        x_l = x0
+        for i in range(0, (self.cross_layers)):
+            x_l = tf.tensordot(tf.matmul(x0, x_l, transpose_b=True),
+                        self.weights['crosslayer_%d' %i], 1) + self.weights['crossbias_%d' %i] + x_l
+        x_l = tf.reshape(x_l, (-1, self.input_size))
+        self.cross_out = self._linear(x_l, 1, self.l2_reg, None)
 
         # ----- deep component ----
         self.y_deep = tf.reshape(self.embeddings, shape=[-1, self.field_size * self.embedding_size])  ## None * (F * K)
@@ -147,7 +150,7 @@ class DCN(BaseEstimator, TransformerMixin):
 
         concat_input = tf.concat([self.cross_out, self.y_deep], 1)
         self.identity_out = tf.identity(concat_input, name='concat_out')
-        self.linear_out = self._linear(self.identity_out, self.l2_reg, None)
+        self.linear_out = self._linear(self.identity_out, 1 ,self.l2_reg, None)
 
 
         ## loss
@@ -187,29 +190,6 @@ class DCN(BaseEstimator, TransformerMixin):
         if self.verbose > 0:
             print ("#params: %d" %total_parameters)
 
-    def cross_op(self, x0, x, w, b):
-        """
-         Args:
-             x0: shape [m, d]
-             x: shape [m, d]
-             w: shape [d, ]
-             b: shape [d, ]
-        """
-        ## TODO batch dot
-        x0 = tf.expand_dims(x0, axis=2)
-        x  = tf.expand_dims(x,  axis=2)
-
-        print(x0.shape)
-        multiple = w.get_shape().as_list()[0]
-        print(multiple)
-        x0_broad_horizon = tf.tile(x0, [1,1,multiple])   # mxdx1 -> mxdxd #
-        x_broad_vertical = tf.transpose(tf.tile(x,  [1,1,multiple]), [0,2,1]) # mxdx1 -> mxdxd #
-        w_broad_horizon  = tf.tile(w,  [1,multiple])     # dx1 -> dxd #
-        mid_res = tf.multiply(tf.multiply(x0_broad_horizon, x_broad_vertical), w) # mxdxd # here use broadcast compute #
-        res = tf.reduce_sum(mid_res, axis=2) # mxd #
-        res = res + tf.transpose(b) # mxd + 1xd # here also use broadcast compute #a
-        return res
-
 
     def _initialize_weights(self):
         all_weights = dict()
@@ -241,15 +221,16 @@ class DCN(BaseEstimator, TransformerMixin):
 
 
         ## cross layers
-        num_layers = len(self.cross_layers)
+        num_layers = (self.cross_layers)
 
         for i in range( num_layers):
             all_weights["crosslayer_%d" % i] = tf.Variable(
-                                tf.random_normal((self.cross_layers[i], 1), mean=0.0, stddev=0.5),
+                                tf.random_normal((input_size, 1), mean=0.0, stddev=0.5),
                                 dtype=tf.float32)
             all_weights["crossbias_%d" % i] = tf.Variable(
-                                tf.random_normal((self.cross_layers[i], 1), mean=0.0, stddev=0.5),
+                                tf.random_normal((input_size, 1), mean=0.0, stddev=0.5),
                                 dtype=tf.float32)  # 1 * layer[i]
+        self.input_size = input_size
         return all_weights
 
 
@@ -430,8 +411,8 @@ def make_save_file(args):
 def train(args):
     data = DATA.LoadData(args.path, args.dataset)
     if args.verbose > 0:
-        print("DCN: dataset=%s, factors=%s, cross_layers=%s, deep_layers=%s, epoch=%d, batch_size=%d, lr=%.4f, keep=%s,\
-          optimizer=%s, batch_norm=%s, decay=%f, activation=%s" %(args.dataset, args.hidden_factor, eval(args.cross_layers), \
+        print("DCN: dataset=%s, factors=%s, cross_layers=%d, deep_layers=%s, epoch=%d, batch_size=%d, lr=%.4f, keep=%s,\
+          optimizer=%s, batch_norm=%s, decay=%f, activation=%s" %(args.dataset, args.hidden_factor, (args.cross_layers), \
           eval(args.deep_layers), args.epoch, args.batch_size, args.lr, eval(args.keep), args.optimizer, args.batch_norm, args.decay, \
           args.activation))
 
@@ -450,7 +431,7 @@ def train(args):
     t1 = time()
     model = DCN(data.features_M, data.field, args.hidden_factor, args.pretrain, save_file,
                    activation_function, args.epoch, args.batch_size, args.lr, args.optimizer,
-                   args.batch_norm, args.decay, eval(args.keep), eval(args.cross_layers), eval(args.deep_layers))
+                   args.batch_norm, args.decay, eval(args.keep), (args.cross_layers), eval(args.deep_layers))
     model.train(data.Train_data, data.Validation_data, data.Test_data)
 
     ## find the best validation result across iterations
