@@ -76,8 +76,6 @@ class PNN(BaseEstimator, TransformerMixin):
         self.embedding_size=embedding_size
         self.pretrain_flag = pretrain_flag
         self.save_file = save_file
-        self.use_fm = use_fm
-        self.use_deep= use_deep
         self.epoch = epoch
         self.learning_rate = learning_rate
         self.optimizer_type=optimizer_type
@@ -128,16 +126,33 @@ class PNN(BaseEstimator, TransformerMixin):
             ## ----- embeddding features -----
             self.embeddings = tf.nn.embedding_lookup(self.weights['feature_embeddings'], self.train_features) #None * F' * K
 
+
+            ## -------- linear singal ----------
+            linear_output = []
+            for i in range(self.D1):
+                linear_output.append(tf.reshape(
+                    tf.reduce_sum(tf.multiply(self.embeddings, self.weights['product_linear'][i]), axis=[1,2]), shape=(-1, 1)
+                ))
+            self.lz = tf.concat(linear_output, axis=1)
+
             ## -------- quardatic singal ----------
+
+            quadratic_output = []
             if self.use_inner:
-                p = []
+                for i in range(self.D1):
+                    theta = tf.multiply(self.embeddings,tf.reshape(self.weights['product_quadratic_inner'][i],(1,-1,1))) # N * F * K
+                    quadratic_output.append(tf.reshape(tf.norm(tf.reduce_sum(theta,axis=1),axis=1),shape=(-1,1))) # N * 1
             else:
                 embedding_sum = tf.reduce_sum(self.embeddings, axis=1) # N * K
                 p = tf.matmul(tf.expand_dims(embedding_sum,2),tf.expand_dims(embedding_sum,1)) # N * K * K
                 for i in range(self.D1):
-                    theta =
+                    theta = tf.multiply(p, tf.expand_dims(self.weights['product_quadratic_outer'][i], 0))
+                    quadratic_output.append(tf.reshape(tf.reduce_sum(theta, axis=[1, 2]), shape=[-1, 1]))
 
+            self.lp = tf.concat(quadratic_output, axis=1)
 
+            self.y_deep = self.deep_layer_activation(tf.add(tf.add(self.lz, self.lp), self.weights["product_bias"]))
+            self.y_deep = tf.nn.dropout(self.y_deep, self.dropout_keep[1])
 
             ##  -------  deep layers ------
             for i in range(0, len(self.deep_layers)):
@@ -154,8 +169,7 @@ class PNN(BaseEstimator, TransformerMixin):
 
             ## TODO regulazation
 
-            self.identity_out = tf.identity(concat_input, name='concat_out')
-            self.linear_out = self._linear(self.identity_out, 1, self.l2_reg, None)
+            self.linear_out = self._linear(self.y_deep, 1, self.l2_reg, None)
 
 
 
@@ -215,11 +229,11 @@ class PNN(BaseEstimator, TransformerMixin):
             all_weights["product_quadratic_outer"] = tf.Variable(tf.random_normal([self.D1, self.embedding_size, self.embedding_size], 0.0, 0.01))
         ##
         all_weights["product_linear"] = tf.Variable(tf.random_normal([self.D1, self.field_size, self.embedding_size], 0.0, 0.01))
-        all_weights["product_bias"] = tf.Variable(tf.random_normal([self.D1, ]), 0,0,1.0)
+        all_weights["product_bias"] = tf.Variable(tf.random_normal([self.D1, ], 0.0,1.0))
 
         # deep layers
         num_layer = len(self.deep_layers)
-        input_size = self.field_size * self.embedding_size
+        input_size = self.D1
         glorot = np.sqrt(2.0 / (input_size + self.deep_layers[0]))
         all_weights["layer_0"] = tf.Variable(
             np.random.normal(loc=0, scale=glorot, size=(input_size, self.deep_layers[0])), dtype=np.float32)
@@ -406,10 +420,10 @@ def make_save_file(args):
 def train(args):
     data = DATA.LoadData(args.path, args.dataset)
     if args.verbose > 0:
-        print("DeepFm: dataset=%s, factors=%s, epoch=%d, batch_size=%d, lr=%.4f, keep=%s,\
-          optimizer=%s, batch_norm=%s, decay=%f, activation=%s" %(args.dataset, args.hidden_factor, \
+        print("PNN: dataset=%s, factors=%s, epoch=%d, batch_size=%d, lr=%.4f, keep=%s,\
+          optimizer=%s, batch_norm=%s, decay=%f, activation=%s, use_inner=%d, D1=%d" %(args.dataset, args.hidden_factor, \
           args.epoch, args.batch_size, args.lr, eval(args.keep), args.optimizer, args.batch_norm, args.decay, \
-          args.activation))
+          args.activation, args.use_inner, args.D1))
 
 
     activation_function = tf.nn.relu
@@ -424,9 +438,9 @@ def train(args):
 
     ## training
     t1 = time()
-    model = DeepFm(data.features_M, data.field, args.hidden_factor, args.pretrain, save_file,
+    model = PNN(data.features_M, data.field, args.hidden_factor, args.pretrain, save_file,
                    activation_function, args.epoch, args.batch_size, args.lr, args.optimizer,
-                   args.batch_norm, args.decay, eval(args.keep))
+                   args.batch_norm, args.decay, eval(args.keep), args.use_inner, args.D1)
     model.train(data.Train_data, data.Validation_data, data.Test_data)
 
     ## find the best validation result across iterations

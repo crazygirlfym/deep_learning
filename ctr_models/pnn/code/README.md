@@ -1,8 +1,8 @@
-# deepFM
+# PNN
 
-This is our implementation for the paper:
+This is our implementation for the paper: Product-based Neural Networks for User Response Prediction
 
-Huifeng Guo, Ruiming Tang, Yunming Yey, Zhenguo Li, Xiuqiang He. [DeepFM: A Factorization-Machine based Neural Network for CTR Prediction](https://arxiv.org/abs/1703.04247)
+Yanru Qu, Han Cai, Kan Ren, Weinan Zhang, Yong Yu. [Product-based Neural Networks for User Response Prediction](https://arxiv.org/abs/1611.00144)
 
 We have additionally released our TensorFlow implementation of Factorization Machines under our proposed neural network framework. 
 
@@ -15,7 +15,7 @@ We use the same input format as the LibFM toolkit (http://www.libfm.org/). In th
 The MovieLens data has been used for personalized tag recommendation, which contains 668,953 tag applications of users on movies. We convert each tag application (user ID, movie ID and tag) to a feature vector using one-hot encoding and obtain 90,445 binary features. The following examples are based on this dataset and it will be referred as ***ml-tag*** wherever in the files' name or inside the code.
 When the dataset is ready, the current directory should be like this:
 * code
-    - DeepFM.py
+    - PNN.py
     - LoadData.py
 * data
     - ml-tag
@@ -29,7 +29,7 @@ Use the following command to train the model with the optimal parameters:
 # step into the code folder
 cd code
 
-python DeepFM.py --dataset ml-tag --epoch 100 --pretrain -1 --batch_size 4096 --hidden_factor 100  --lr 0.1
+python PNN.py --dataset ml-tag --epoch 100 --pretrain -1 --batch_size 4096 --hidden_factor 100  --lr 0.1
 ```
 The instruction of commands has been clearly stated in the codes (see the parse_args function). 
 
@@ -48,7 +48,7 @@ Now it's time to evaluate the pretrained models with the test datasets, which ca
 ```
 
 
-# evaluate the pretrained DeepFM model
-python DeepFM.py --dataset ml-tag --epoch 100 --pretrain -1 --batch_size 4096 --hidden_factor 100  --lr 0.1, --process evaluate
+# evaluate the pretrained PNN model
+python PNN.py --dataset ml-tag --epoch 100 --pretrain -1 --batch_size 4096 --hidden_factor 100  --lr 0.1, --process evaluate
 ```
 
